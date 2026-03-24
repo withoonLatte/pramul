@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, orderBy, where } from 'firebase/firestore';
-import { Plus, Trash2, Save, ShoppingCart, FileText, CheckCircle, XCircle, Clock, Search, Printer, Download, X, Building, User } from 'lucide-react';
+import { Plus, Trash2, Save, ShoppingCart, FileText, CheckCircle, XCircle, Clock, Search, Printer, Download, X } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { motion, AnimatePresence } from 'motion/react';
@@ -57,6 +57,10 @@ export default function Orders({ userProfile }: { userProfile: any }) {
   }, []);
 
   const handleSave = async () => {
+    if (!currentPO.prId || !currentPO.supplierId) {
+      alert('กรุณาเลือกใบขอซื้อและผู้ขาย');
+      return;
+    }
     try {
       if (currentPO.id) {
         const { id, ...data } = currentPO;
@@ -82,24 +86,19 @@ export default function Orders({ userProfile }: { userProfile: any }) {
     window.print();
   };
 
-  const handleDownload = () => {
-    if (!previewPO) return;
-    const pr = requisitions.find(r => r.id === previewPO.prId);
-    const supplier = suppliers.find(s => s.id === previewPO.supplierId);
+  const handleDownload = (poToDownload: PurchaseOrder | null = previewPO) => {
+    if (!poToDownload) return;
+    const pr = requisitions.find(r => r.id === poToDownload.prId);
+    const supplier = suppliers.find(s => s.id === poToDownload.supplierId);
     
     const doc = new jsPDF();
-    
-    // Note: Standard jsPDF fonts don't support Thai. 
-    // In a real app, we'd embed a Thai font. 
-    // For this demo, we'll use English labels where possible or just rely on the print-to-pdf functionality.
-    // However, we'll try to generate a basic structure.
     
     doc.setFontSize(20);
     doc.text('PURCHASE ORDER', 105, 20, { align: 'center' });
     
     doc.setFontSize(10);
-    doc.text(`PO Number: ${previewPO.poNumber}`, 20, 40);
-    doc.text(`Date: ${new Date(previewPO.createdAt).toLocaleDateString()}`, 20, 45);
+    doc.text(`PO Number: ${poToDownload.poNumber}`, 20, 40);
+    doc.text(`Date: ${new Date(poToDownload.createdAt).toLocaleDateString()}`, 20, 45);
     
     doc.text('Vendor:', 20, 60);
     doc.text(supplier?.name || 'Unknown', 20, 65);
@@ -120,10 +119,10 @@ export default function Orders({ userProfile }: { userProfile: any }) {
       startY: 80,
       head: [['Description', 'Qty', 'Unit Price', 'Total']],
       body: tableData,
-      foot: [['', '', 'Total Amount', `THB ${previewPO.totalAmount.toLocaleString()}`]],
+      foot: [['', '', 'Total Amount', `THB ${poToDownload.totalAmount.toLocaleString()}`]],
     });
     
-    doc.save(`PO-${previewPO.poNumber}.pdf`);
+    doc.save(`PO-${poToDownload.poNumber}.pdf`);
   };
 
   const resetForm = () => {
@@ -186,7 +185,7 @@ export default function Orders({ userProfile }: { userProfile: any }) {
                   className="w-full p-4 bg-slate-50 border-none rounded-2xl text-slate-800 focus:ring-2 focus:ring-accent-pink outline-none transition-all font-medium appearance-none"
                 >
                   <option value="">เลือกใบขอซื้อ...</option>
-                  {requisitions.map(pr => (
+                  {requisitions.filter(pr => pr.status === 'approved').map(pr => (
                     <option key={pr.id} value={pr.id}>{pr.title} (฿{pr.totalAmount.toLocaleString()})</option>
                   ))}
                 </select>
@@ -281,7 +280,7 @@ export default function Orders({ userProfile }: { userProfile: any }) {
                           <Printer className="w-5 h-5" />
                         </button>
                         <button 
-                          onClick={() => { setPreviewPO(po); handleDownload(); }}
+                          onClick={() => { setPreviewPO(po); handleDownload(po); }}
                           className="p-3 bg-slate-50 hover:bg-soft-pink text-slate-400 hover:text-accent-pink rounded-xl transition-all"
                           title="ดาวน์โหลด PDF"
                         >
