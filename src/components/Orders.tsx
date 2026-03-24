@@ -83,46 +83,104 @@ export default function Orders({ userProfile }: { userProfile: any }) {
   const [previewPO, setPreviewPO] = useState<PurchaseOrder | null>(null);
 
   const handlePrint = () => {
-    window.print();
-  };
+    console.log('Printing PO:', previewPO?.poNumber);
+    const poDocument = document.getElementById('po-document');
+    if (!poDocument) {
+      console.error('PO document element not found');
+      return;
+    }
 
-  const handleDownload = (poToDownload: PurchaseOrder | null = previewPO) => {
-    if (!poToDownload) return;
-    const pr = requisitions.find(r => r.id === poToDownload.prId);
-    const supplier = suppliers.find(s => s.id === poToDownload.supplierId);
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('กรุณาอนุญาตให้เปิดหน้าต่างใหม่ (Pop-up) เพื่อพิมพ์เอกสาร');
+      return;
+    }
+
+    printWindow.document.write('<html><head><title>Print Purchase Order</title>');
     
-    const doc = new jsPDF();
-    
-    doc.setFontSize(20);
-    doc.text('PURCHASE ORDER', 105, 20, { align: 'center' });
-    
-    doc.setFontSize(10);
-    doc.text(`PO Number: ${poToDownload.poNumber}`, 20, 40);
-    doc.text(`Date: ${new Date(poToDownload.createdAt).toLocaleDateString()}`, 20, 45);
-    
-    doc.text('Vendor:', 20, 60);
-    doc.text(supplier?.name || 'Unknown', 20, 65);
-    doc.text(supplier?.email || '', 20, 70);
-    
-    doc.text('Ship To:', 120, 60);
-    doc.text('Procurement Pro HQ', 120, 65);
-    doc.text('123 Sukhumvit Rd, Bangkok', 120, 70);
-    
-    const tableData = pr?.items?.map((item: any) => [
-      item.description,
-      item.quantity,
-      item.unitPrice.toLocaleString(),
-      item.total.toLocaleString()
-    ]) || [];
-    
-    autoTable(doc, {
-      startY: 80,
-      head: [['Description', 'Qty', 'Unit Price', 'Total']],
-      body: tableData,
-      foot: [['', '', 'Total Amount', `THB ${poToDownload.totalAmount.toLocaleString()}`]],
+    // Copy all styles from the main document to the print window
+    const styles = document.querySelectorAll('style, link[rel="stylesheet"]');
+    styles.forEach(style => {
+      printWindow.document.write(style.outerHTML);
     });
     
-    doc.save(`PO-${poToDownload.poNumber}.pdf`);
+    printWindow.document.write('</head><body class="bg-white">');
+    printWindow.document.write(poDocument.outerHTML);
+    printWindow.document.write('</body></html>');
+    printWindow.document.close();
+    
+    // Wait for styles/images to load
+    printWindow.onload = () => {
+      printWindow.focus();
+      printWindow.print();
+      // Optional: close the window after printing
+      // printWindow.close();
+    };
+    
+    // Fallback if onload doesn't fire
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 1000);
+  };
+
+  const handleDownload = (poToDownload: PurchaseOrder | null = null) => {
+    const targetPO = poToDownload || previewPO;
+    console.log('Downloading PO:', targetPO?.poNumber);
+    if (!targetPO) {
+      console.error('No PO selected for download');
+      return;
+    }
+    
+    try {
+      const pr = requisitions.find(r => r.id === targetPO.prId);
+      const supplier = suppliers.find(s => s.id === targetPO.supplierId);
+      
+      const doc = new jsPDF();
+      
+      doc.setFontSize(20);
+      doc.text('PURCHASE ORDER', 105, 20, { align: 'center' });
+      
+      doc.setFontSize(10);
+      doc.text(`PO Number: ${targetPO.poNumber}`, 20, 40);
+      doc.text(`Date: ${new Date(targetPO.createdAt).toLocaleDateString()}`, 20, 45);
+      
+      doc.text('Vendor:', 20, 60);
+      doc.text(supplier?.name || 'Unknown', 20, 65);
+      doc.text(supplier?.email || '', 20, 70);
+      
+      doc.text('Ship To:', 120, 60);
+      doc.text('Procurement Pro HQ', 120, 65);
+      doc.text('123 Sukhumvit Rd, Bangkok', 120, 70);
+      
+      const tableData = pr?.items?.map((item: any) => [
+        item.description,
+        item.quantity,
+        item.unitPrice.toLocaleString(),
+        item.total.toLocaleString()
+      ]) || [];
+      
+      const options = {
+        startY: 80,
+        head: [['Description', 'Qty', 'Unit Price', 'Total']],
+        body: tableData,
+        foot: [['', '', 'Total Amount', `THB ${targetPO.totalAmount.toLocaleString()}`]],
+      };
+
+      if (typeof autoTable === 'function') {
+        autoTable(doc, options);
+      } else if (typeof (doc as any).autoTable === 'function') {
+        (doc as any).autoTable(options);
+      } else {
+        console.warn('autoTable not found, using fallback text');
+        doc.text('Item details could not be generated in table format.', 20, 80);
+      }
+      
+      doc.save(`PO-${targetPO.poNumber}.pdf`);
+    } catch (err) {
+      console.error('Error generating PDF:', err);
+      alert('เกิดข้อผิดพลาดในการสร้างไฟล์ PDF');
+    }
   };
 
   const resetForm = () => {
@@ -273,7 +331,11 @@ export default function Orders({ userProfile }: { userProfile: any }) {
                     <td className="p-6 text-right">
                       <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button 
-                          onClick={() => { setPreviewPO(po); setShowPreview(true); }}
+                          onClick={() => { 
+                            console.log('Opening preview for:', po.poNumber);
+                            setPreviewPO(po); 
+                            setShowPreview(true); 
+                          }}
                           className="p-3 bg-slate-50 hover:bg-soft-green text-slate-400 hover:text-accent-green rounded-xl transition-all"
                           title="พิมพ์ / ดูตัวอย่าง"
                         >
@@ -324,6 +386,9 @@ export default function Orders({ userProfile }: { userProfile: any }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
+                  <div className="hidden lg:block text-[10px] font-bold text-slate-400 uppercase tracking-widest mr-4">
+                    หากปุ่มไม่ทำงาน กรุณาเปิดแอปในหน้าต่างใหม่
+                  </div>
                   <button 
                     onClick={handlePrint}
                     className="flex items-center gap-2 px-6 py-3 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl font-bold text-sm transition-all"
@@ -332,7 +397,7 @@ export default function Orders({ userProfile }: { userProfile: any }) {
                     พิมพ์
                   </button>
                   <button 
-                    onClick={handleDownload}
+                    onClick={() => handleDownload()}
                     className="flex items-center gap-2 px-6 py-3 bg-accent-pink text-white rounded-xl font-bold text-sm hover:bg-accent-pink/90 transition-all shadow-lg"
                   >
                     <Download className="w-4 h-4" />
