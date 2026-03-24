@@ -83,45 +83,14 @@ export default function Orders({ userProfile }: { userProfile: any }) {
   const [previewPO, setPreviewPO] = useState<PurchaseOrder | null>(null);
 
   const handlePrint = () => {
-    console.log('Printing PO:', previewPO?.poNumber);
-    const poDocument = document.getElementById('po-document');
-    if (!poDocument) {
-      console.error('PO document element not found');
-      return;
+    try {
+      console.log('Printing PO:', previewPO?.poNumber);
+      if (!previewPO) return;
+      window.print();
+    } catch (err) {
+      console.error('Error printing:', err);
+      alert('เกิดข้อผิดพลาดในการพิมพ์: ' + (err instanceof Error ? err.message : String(err)));
     }
-
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert('กรุณาอนุญาตให้เปิดหน้าต่างใหม่ (Pop-up) เพื่อพิมพ์เอกสาร');
-      return;
-    }
-
-    printWindow.document.write('<html><head><title>Print Purchase Order</title>');
-    
-    // Copy all styles from the main document to the print window
-    const styles = document.querySelectorAll('style, link[rel="stylesheet"]');
-    styles.forEach(style => {
-      printWindow.document.write(style.outerHTML);
-    });
-    
-    printWindow.document.write('</head><body class="bg-white">');
-    printWindow.document.write(poDocument.outerHTML);
-    printWindow.document.write('</body></html>');
-    printWindow.document.close();
-    
-    // Wait for styles/images to load
-    printWindow.onload = () => {
-      printWindow.focus();
-      printWindow.print();
-      // Optional: close the window after printing
-      // printWindow.close();
-    };
-    
-    // Fallback if onload doesn't fire
-    setTimeout(() => {
-      printWindow.focus();
-      printWindow.print();
-    }, 1000);
   };
 
   const handleDownload = (poToDownload: PurchaseOrder | null = null) => {
@@ -154,21 +123,23 @@ export default function Orders({ userProfile }: { userProfile: any }) {
       doc.text('123 Sukhumvit Rd, Bangkok', 120, 70);
       
       const tableData = pr?.items?.map((item: any) => [
-        item.description,
-        item.quantity,
-        item.unitPrice.toLocaleString(),
-        item.total.toLocaleString()
+        item.description || '',
+        item.quantity || 0,
+        (Number(item.unitPrice) || 0).toLocaleString(),
+        (Number(item.total) || 0).toLocaleString()
       ]) || [];
       
       const options = {
         startY: 80,
         head: [['Description', 'Qty', 'Unit Price', 'Total']],
         body: tableData,
-        foot: [['', '', 'Total Amount', `THB ${targetPO.totalAmount.toLocaleString()}`]],
+        foot: [['', '', 'Total Amount', `THB ${(Number(targetPO.totalAmount) || 0).toLocaleString()}`]],
       };
 
-      if (typeof autoTable === 'function') {
-        autoTable(doc, options);
+      // Robust autoTable call
+      const at = (autoTable as any).default || autoTable;
+      if (typeof at === 'function') {
+        at(doc, options);
       } else if (typeof (doc as any).autoTable === 'function') {
         (doc as any).autoTable(options);
       } else {
@@ -179,7 +150,7 @@ export default function Orders({ userProfile }: { userProfile: any }) {
       doc.save(`PO-${targetPO.poNumber}.pdf`);
     } catch (err) {
       console.error('Error generating PDF:', err);
-      alert('เกิดข้อผิดพลาดในการสร้างไฟล์ PDF');
+      alert('เกิดข้อผิดพลาดในการสร้างไฟล์ PDF: ' + (err instanceof Error ? err.message : String(err)));
     }
   };
 
@@ -386,9 +357,12 @@ export default function Orders({ userProfile }: { userProfile: any }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className="hidden lg:block text-[10px] font-bold text-slate-400 uppercase tracking-widest mr-4">
-                    หากปุ่มไม่ทำงาน กรุณาเปิดแอปในหน้าต่างใหม่
-                  </div>
+                  <button 
+                    onClick={() => window.open(window.location.href, '_blank')}
+                    className="hidden lg:flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all mr-4"
+                  >
+                    เปิดในหน้าต่างใหม่
+                  </button>
                   <button 
                     onClick={handlePrint}
                     className="flex items-center gap-2 px-6 py-3 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl font-bold text-sm transition-all"
@@ -418,8 +392,8 @@ export default function Orders({ userProfile }: { userProfile: any }) {
                   <div className="flex justify-between items-start mb-12 border-b-2 border-slate-50 pb-8">
                     <div>
                       <div className="flex items-center gap-3 mb-4">
-                        <div className="w-10 h-10 bg-accent-green rounded-xl flex items-center justify-center">
-                          <ShoppingCart className="w-6 h-6 text-white" />
+                        <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border border-slate-100 shadow-sm">
+                          <ShoppingCart className="w-6 h-6 text-accent-green" />
                         </div>
                         <h2 className="font-serif italic text-2xl text-slate-800">Procurement Pro</h2>
                       </div>
@@ -524,21 +498,48 @@ export default function Orders({ userProfile }: { userProfile: any }) {
 
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
-          body * {
-            visibility: hidden;
+          body > *:not(.fixed) {
+            display: none !important;
           }
-          #po-document, #po-document * {
-            visibility: visible;
+          .fixed {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            background: white !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            z-index: 9999 !important;
+            overflow: visible !important;
+          }
+          .fixed > div {
+            transform: none !important;
+            box-shadow: none !important;
+            border: none !important;
+            width: 100% !important;
+            max-width: none !important;
+            height: auto !important;
+            max-height: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          .fixed > div > div:not(.overflow-y-auto) {
+            display: none !important;
+          }
+          .fixed .overflow-y-auto {
+            overflow: visible !important;
+            padding: 0 !important;
+            height: auto !important;
+            max-height: none !important;
           }
           #po-document {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            margin: 0;
-            padding: 0;
-            border: none;
-            box-shadow: none;
+            box-shadow: none !important;
+            border: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            width: 100% !important;
+            max-width: none !important;
           }
           .print\\:hidden {
             display: none !important;
