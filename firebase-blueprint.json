@@ -1,0 +1,116 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and role information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "requester", "approver", "procurement"] },
+        "department": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Supplier": {
+      "title": "Supplier",
+      "description": "Supplier information and rating",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "contact": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "rating": { "type": "number", "description": "Vendor rating from 1 to 5" },
+        "status": { "type": "string", "enum": ["active", "inactive"] }
+      },
+      "required": ["name", "email"]
+    },
+    "PurchaseRequisition": {
+      "title": "Purchase Requisition",
+      "description": "Internal request for goods or services",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "requesterUid": { "type": "string" },
+        "department": { "type": "string" },
+        "items": { "type": "array", "items": { "type": "object" } },
+        "totalAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["draft", "pending_approval", "approved", "rejected", "po_created"] },
+        "currentApprovalStep": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "requesterUid", "totalAmount", "status"]
+    },
+    "ApprovalWorkflow": {
+      "title": "Approval Workflow",
+      "description": "Configurable approval chains",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "department": { "type": "string", "description": "Applies to this department, or 'all'" },
+        "minAmount": { "type": "number" },
+        "maxAmount": { "type": "number" },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "role": { "type": "string" },
+              "approverUid": { "type": "string", "description": "Optional specific user" }
+            }
+          }
+        }
+      },
+      "required": ["name", "steps"]
+    },
+    "PurchaseOrder": {
+      "title": "Purchase Order",
+      "description": "Official order sent to supplier",
+      "type": "object",
+      "properties": {
+        "prId": { "type": "string" },
+        "supplierId": { "type": "string" },
+        "poNumber": { "type": "string" },
+        "status": { "type": "string", "enum": ["issued", "received_partially", "received_fully", "cancelled"] },
+        "totalAmount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["prId", "supplierId", "poNumber", "status"]
+    },
+    "GoodsReceipt": {
+      "title": "Goods Receipt",
+      "description": "Record of goods received",
+      "type": "object",
+      "properties": {
+        "poId": { "type": "string" },
+        "receivedItems": { "type": "array", "items": { "type": "object" } },
+        "receivedAt": { "type": "string", "format": "date-time" },
+        "receivedBy": { "type": "string" }
+      },
+      "required": ["poId", "receivedAt", "receivedBy"]
+    },
+    "Quotation": {
+      "title": "Quotation",
+      "description": "Supplier bid for a PR",
+      "type": "object",
+      "properties": {
+        "prId": { "type": "string" },
+        "supplierId": { "type": "string" },
+        "price": { "type": "number" },
+        "terms": { "type": "string" },
+        "isSelected": { "type": "boolean" }
+      },
+      "required": ["prId", "supplierId", "price"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": { "schema": "User", "description": "User profiles" },
+    "/suppliers/{supplierId}": { "schema": "Supplier", "description": "Supplier records" },
+    "/requisitions/{prId}": { "schema": "PurchaseRequisition", "description": "Purchase requisitions" },
+    "/workflows/{workflowId}": { "schema": "ApprovalWorkflow", "description": "Approval workflow configurations" },
+    "/orders/{poId}": { "schema": "PurchaseOrder", "description": "Purchase orders" },
+    "/receipts/{receiptId}": { "schema": "GoodsReceipt", "description": "Goods receipts" },
+    "/quotations/{quotationId}": { "schema": "Quotation", "description": "Supplier quotations" }
+  }
+}

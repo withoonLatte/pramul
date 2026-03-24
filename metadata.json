@@ -1,0 +1,5 @@
+{
+  "name": "Procurement Pro",
+  "description": "A comprehensive procurement management system featuring purchase requisitions, supplier management, quotation comparison, automated approval workflows, purchase orders, and spend analysis.",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,178 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Fields: uid, email, displayName, role, department
+    //
+    // Collection: suppliers
+    // Fields: name, contact, email, rating, status, createdAt
+    //
+    // Collection: requisitions
+    // Fields: title, description, requesterUid, requesterName, department, items, totalAmount, status, currentApprovalStep, createdAt
+    //
+    // Collection: workflows
+    // Fields: name, department, minAmount, maxAmount, steps, createdAt
+    //
+    // Collection: orders
+    // Fields: prId, supplierId, poNumber, status, totalAmount, createdAt
+    //
+    // Collection: receipts
+    // Fields: poId, receivedItems, receivedAt, receivedBy
+    //
+    // Collection: quotations
+    // Fields: prId, supplierId, supplierName, price, terms, items, isSelected, createdAt
+    //
+    // Collection: settings
+    // Fields: companyName, companyLogo, updatedAt, updatedBy
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          request.auth.token.email == "nywithoon@gmail.com" ||
+          request.auth.token.email == "nywithoon@procurement.pro" ||
+          request.auth.token.email == "admin@procurement.pro");
+    }
+
+    function isProcurement() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'procurement' || isAdmin());
+    }
+
+    function isApprover() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'approver' || 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'executive' || 
+         isAdmin());
+    }
+
+    function isExecutive() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'executive' || isAdmin());
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'role', 'department']) &&
+             data.uid is string && data.email is string &&
+             data.role in ['admin', 'requester', 'approver', 'procurement', 'executive'];
+    }
+
+    function isValidWorkflow(data) {
+      return hasOnlyAllowedFields(['name', 'department', 'minAmount', 'maxAmount', 'steps', 'createdAt']) &&
+             data.name is string && data.steps is list;
+    }
+
+    function isValidRequisition(data) {
+      return hasOnlyAllowedFields(['title', 'description', 'requesterUid', 'requesterName', 'department', 'items', 'totalAmount', 'status', 'currentApprovalStep', 'createdAt']) &&
+             data.title is string && data.requesterUid is string &&
+             data.status in ['draft', 'pending_approval', 'approved', 'rejected', 'po_created'];
+    }
+
+    function isValidSupplier(data) {
+      return hasOnlyAllowedFields(['name', 'contact', 'email', 'status', 'rating', 'createdAt']) &&
+             data.name is string && data.status in ['active', 'inactive'];
+    }
+
+    function isValidQuotation(data) {
+      return hasOnlyAllowedFields(['prId', 'supplierId', 'supplierName', 'price', 'terms', 'items', 'isSelected', 'createdAt']) &&
+             data.prId is string && data.supplierId is string && data.price is number;
+    }
+
+    function isValidOrder(data) {
+      return hasOnlyAllowedFields(['prId', 'supplierId', 'poNumber', 'totalAmount', 'status', 'createdAt']) &&
+             data.prId is string && data.supplierId is string && 
+             data.status in ['issued', 'received_partially', 'received_fully', 'cancelled'];
+    }
+
+    function isValidReceipt(data) {
+      return hasOnlyAllowedFields(['poId', 'receivedItems', 'receivedAt', 'receivedBy']) &&
+             data.poId is string && data.receivedBy is string;
+    }
+
+    function isValidSetting(data) {
+      return hasOnlyAllowedFields(['companyName', 'companyLogo', 'updatedAt', 'updatedBy']) &&
+             data.updatedBy is string;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role != 'admin' || isAdmin());
+      allow update: if isAuthenticated() && (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /suppliers/{supplierId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isProcurement();
+    }
+
+    match /requisitions/{prId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.requesterUid || isAdmin() || isProcurement() || isApprover() || isExecutive());
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.requesterUid && isValidRequisition(request.resource.data);
+      allow update: if isAuthenticated() && (request.auth.uid == resource.data.requesterUid || isAdmin() || isProcurement() || isApprover() || isExecutive()) && isValidRequisition(request.resource.data);
+      allow delete: if isAdmin() || (isAuthenticated() && request.auth.uid == resource.data.requesterUid && resource.data.status == 'draft');
+    }
+
+    match /workflows/{workflowId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /orders/{poId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isProcurement();
+    }
+
+    match /receipts/{receiptId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isProcurement();
+    }
+
+    match /quotations/{quotationId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isProcurement();
+    }
+
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Bidding collection (legacy or alternative name)
+    match /bidding/{bidId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isProcurement();
+    }
+
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}
