@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, orderBy, where } from 'firebase/firestore';
 import { Plus, Trash2, Save, ShoppingCart, FileText, CheckCircle, XCircle, Clock, Search, Printer, Download, X } from 'lucide-react';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface PurchaseOrder {
@@ -137,10 +137,7 @@ export default function Orders({ userProfile }: { userProfile: any }) {
       };
 
       // Robust autoTable call
-      const at = (autoTable as any).default || autoTable;
-      if (typeof at === 'function') {
-        at(doc, options);
-      } else if (typeof (doc as any).autoTable === 'function') {
+      if (typeof (doc as any).autoTable === 'function') {
         (doc as any).autoTable(options);
       } else {
         console.warn('autoTable not found, using fallback text');
