@@ -13,7 +13,8 @@ import {
   Line,
   Cell
 } from 'recharts';
-import { TrendingUp, TrendingDown, DollarSign, FileText, Users, ShoppingCart } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, FileText, Users, ShoppingCart, Search, Download, Calendar, Filter } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 export default function Dashboard({ userProfile }: { userProfile: any }) {
   const [stats, setStats] = useState({
@@ -24,6 +25,14 @@ export default function Dashboard({ userProfile }: { userProfile: any }) {
   });
   const [spendData, setSpendData] = useState<any[]>([]);
   const [recentPRs, setRecentPRs] = useState<any[]>([]);
+  
+  // Search & Export State
+  const [searchType, setSearchType] = useState<'pr' | 'po' | 'gr'>('pr');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   useEffect(() => {
     if (!userProfile) return;
@@ -98,6 +107,101 @@ export default function Dashboard({ userProfile }: { userProfile: any }) {
     };
   }, [userProfile]);
 
+  const handleSearch = async () => {
+    setIsSearching(true);
+    try {
+      const collectionName = searchType === 'pr' ? 'requisitions' : searchType === 'po' ? 'orders' : 'receipts';
+      const dateField = searchType === 'gr' ? 'receivedAt' : 'createdAt';
+      
+      let q = query(collection(db, collectionName), orderBy(dateField, 'desc'));
+      
+      // Note: Complex filtering with multiple where clauses and orderby often requires indexes in Firestore.
+      // For simplicity and robustness in this environment, we'll fetch and filter client-side if needed,
+      // or use simple queries.
+      
+      const snapshot = await getDocs(q);
+      let results = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Client-side filtering for dates and query
+      if (startDate) {
+        results = results.filter(item => {
+          const itemDate = item[dateField]?.toDate ? item[dateField].toDate().toISOString() : item[dateField];
+          return itemDate >= startDate;
+        });
+      }
+      
+      if (endDate) {
+        results = results.filter(item => {
+          const itemDate = item[dateField]?.toDate ? item[dateField].toDate().toISOString() : item[dateField];
+          // Add time to end date to include the whole day
+          return itemDate <= (endDate + 'T23:59:59');
+        });
+      }
+      
+      if (searchQuery) {
+        const lowerQuery = searchQuery.toLowerCase();
+        results = results.filter(item => {
+          const searchStr = JSON.stringify(item).toLowerCase();
+          return searchStr.includes(lowerQuery);
+        });
+      }
+      
+      setSearchResults(results);
+    } catch (error) {
+      console.error('Search error:', error);
+      alert('เกิดข้อผิดพลาดในการค้นหา');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const exportToExcel = () => {
+    if (searchResults.length === 0) {
+      alert('ไม่มีข้อมูลให้ส่งออก');
+      return;
+    }
+    
+    // Format data for Excel
+    const formattedData = searchResults.map(item => {
+      const dateField = searchType === 'gr' ? 'receivedAt' : 'createdAt';
+      const date = item[dateField]?.toDate ? item[dateField].toDate() : new Date(item[dateField]);
+      
+      if (searchType === 'pr') {
+        return {
+          'เลขที่ใบขอซื้อ': item.prNumber || item.id,
+          'หัวข้อ': item.title,
+          'แผนก': item.department,
+          'สถานะ': item.status,
+          'ยอดเงิน': item.totalAmount,
+          'วันที่สร้าง': date.toLocaleString('th-TH'),
+          'ผู้ขอซื้อ': item.requesterName || 'N/A'
+        };
+      } else if (searchType === 'po') {
+        return {
+          'เลขที่ใบสั่งซื้อ': item.poNumber || item.id,
+          'เลขที่ใบขอซื้อ': item.prNumber,
+          'ซัพพลายเออร์': item.supplierName || 'N/A',
+          'สถานะ': item.status,
+          'ยอดเงิน': item.totalAmount,
+          'วันที่สร้าง': date.toLocaleString('th-TH')
+        };
+      } else {
+        return {
+          'ID ใบรับสินค้า': item.id,
+          'เลขที่ใบสั่งซื้อ': item.poNumber,
+          'วันที่รับ': date.toLocaleString('th-TH'),
+          'ผู้รับ': item.receivedBy,
+          'จำนวนรายการ': item.receivedItems?.length || 0
+        };
+      }
+    });
+    
+    const worksheet = XLSX.utils.json_to_sheet(formattedData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Documents");
+    XLSX.writeFile(workbook, `${searchType.toUpperCase()}_Export_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
   const StatCard = ({ title, value, icon: Icon, trend, trendValue, bgColor = 'bg-white' }: any) => (
     <div className={`${bgColor} rounded-[2.5rem] p-10 shadow-sm border border-slate-100 transition-all hover:shadow-xl hover:-translate-y-2 duration-500 group relative overflow-hidden`}>
       <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-150 duration-700"></div>
@@ -130,6 +234,141 @@ export default function Dashboard({ userProfile }: { userProfile: any }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+        {/* Search & Export Section */}
+        <div className="lg:col-span-3 bg-white rounded-[3rem] p-12 shadow-sm border border-slate-100">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10">
+            <div>
+              <h5 className="font-serif italic text-3xl text-slate-800">ค้นหาและส่งออกเอกสาร</h5>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-2">ค้นหาใบขอซื้อ ใบสั่งซื้อ และใบรับสินค้า</p>
+            </div>
+            <button 
+              onClick={exportToExcel}
+              disabled={searchResults.length === 0}
+              className="flex items-center gap-3 px-8 py-4 bg-accent-green text-white rounded-2xl text-xs font-bold uppercase tracking-widest hover:bg-slate-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-accent-green/20"
+            >
+              <Download className="w-4 h-4" />
+              ส่งออก Excel (.xlsx)
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-10">
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-4">ประเภทเอกสาร</label>
+              <div className="relative">
+                <Filter className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <select 
+                  value={searchType}
+                  onChange={(e) => setSearchType(e.target.value as any)}
+                  className="w-full pl-14 pr-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-medium focus:ring-2 focus:ring-accent-pink/20 transition-all appearance-none"
+                >
+                  <option value="pr">ใบขอซื้อ (PR)</option>
+                  <option value="po">ใบสั่งซื้อ (PO)</option>
+                  <option value="gr">ใบรับสินค้า (GR)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-4">ตั้งแต่วันที่</label>
+              <div className="relative">
+                <Calendar className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input 
+                  type="date" 
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full pl-14 pr-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-medium focus:ring-2 focus:ring-accent-pink/20 transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-4">ถึงวันที่</label>
+              <div className="relative">
+                <Calendar className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input 
+                  type="date" 
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full pl-14 pr-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-medium focus:ring-2 focus:ring-accent-pink/20 transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2 lg:col-span-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-4">คำค้นหา</label>
+              <div className="flex gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input 
+                    type="text" 
+                    placeholder="ค้นหาเลขที่เอกสาร, ชื่อ..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-14 pr-6 py-4 bg-slate-50 border-none rounded-2xl text-sm font-medium focus:ring-2 focus:ring-accent-pink/20 transition-all"
+                  />
+                </div>
+                <button 
+                  onClick={handleSearch}
+                  disabled={isSearching}
+                  className="px-8 py-4 bg-slate-800 text-white rounded-2xl text-xs font-bold uppercase tracking-widest hover:bg-accent-pink transition-all disabled:opacity-50"
+                >
+                  {isSearching ? '...' : 'ค้นหา'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {searchResults.length > 0 ? (
+            <div className="overflow-x-auto -mx-12 px-12">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-slate-100">
+                    <th className="text-left py-6 text-[10px] font-bold uppercase tracking-widest text-slate-400">เลขที่เอกสาร</th>
+                    <th className="text-left py-6 text-[10px] font-bold uppercase tracking-widest text-slate-400">รายละเอียด</th>
+                    <th className="text-left py-6 text-[10px] font-bold uppercase tracking-widest text-slate-400">วันที่</th>
+                    <th className="text-right py-6 text-[10px] font-bold uppercase tracking-widest text-slate-400">ยอดเงิน/สถานะ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {searchResults.map((item, idx) => (
+                    <tr key={idx} className="group hover:bg-slate-50/50 transition-colors">
+                      <td className="py-6">
+                        <span className="text-sm font-bold text-slate-800">{item.prNumber || item.poNumber || item.id.substring(0, 8)}</span>
+                      </td>
+                      <td className="py-6">
+                        <p className="text-sm font-medium text-slate-600">{item.title || item.supplierName || `ใบรับสินค้า PO: ${item.poNumber || 'N/A'}`}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{item.department || item.receivedBy || 'N/A'}</p>
+                      </td>
+                      <td className="py-6">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                          {new Date(item.createdAt || item.receivedAt).toLocaleDateString('th-TH')}
+                        </span>
+                      </td>
+                      <td className="py-6 text-right">
+                        {item.totalAmount ? (
+                          <p className="text-sm font-bold text-slate-800">฿{item.totalAmount.toLocaleString()}</p>
+                        ) : null}
+                        <span className={`text-[9px] font-bold uppercase tracking-[0.15em] px-3 py-1 rounded-full mt-1 inline-block ${
+                          item.status === 'approved' || item.status === 'received_fully' ? 'bg-accent-green/10 text-accent-green' : 
+                          item.status === 'rejected' || item.status === 'cancelled' ? 'bg-red-50 text-red-500' : 
+                          'bg-accent-pink/10 text-accent-pink'
+                        }`}>
+                          {item.status || 'สำเร็จ'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : !isSearching && (
+            <div className="py-20 text-center bg-slate-50 rounded-[2.5rem] border border-dashed border-slate-200">
+              <Search className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+              <p className="text-xs font-bold uppercase text-slate-400 tracking-[0.3em]">กรุณาระบุเงื่อนไขและกดค้นหา</p>
+            </div>
+          )}
+        </div>
+
         {/* Spend Analysis Chart */}
         <div className="lg:col-span-2 bg-white rounded-[3rem] p-12 shadow-sm border border-slate-100">
           <div className="flex justify-between items-center mb-12">
