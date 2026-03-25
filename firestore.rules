@@ -44,7 +44,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() &&
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+        ((exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
           request.auth.token.email == "nywithoon@gmail.com" ||
           request.auth.token.email == "nywithoon@procurement.pro" ||
           request.auth.token.email == "admin@procurement.pro");
@@ -123,7 +123,7 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
-      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role != 'admin' || isAdmin());
+      allow create: if isAuthenticated() && (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data) && (request.resource.data.role != 'admin' || isAdmin());
       allow update: if isAuthenticated() && (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin());
       allow delete: if isAdmin();
     }

@@ -8,7 +8,7 @@
         "uid": { "type": "string", "description": "Firebase Auth UID" },
         "email": { "type": "string", "format": "email" },
         "displayName": { "type": "string" },
-        "role": { "type": "string", "enum": ["admin", "requester", "approver", "procurement"] },
+        "role": { "type": "string", "enum": ["admin", "requester", "approver", "procurement", "executive"] },
         "department": { "type": "string" }
       },
       "required": ["uid", "email", "role"]
