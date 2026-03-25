@@ -44,27 +44,33 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() &&
-        ((exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-          request.auth.token.email == "nywithoon@gmail.com" ||
-          request.auth.token.email == "nywithoon@procurement.pro" ||
-          request.auth.token.email == "admin@procurement.pro");
+        (request.auth.token.email == "nywithoon@gmail.com" ||
+         request.auth.token.email == "nywithoon@procurement.pro" ||
+         request.auth.token.email == "admin@procurement.pro" ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasRole(role) {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             getUserData().role == role;
     }
 
     function isProcurement() {
-      return isAuthenticated() && 
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'procurement' || isAdmin());
+      return isAdmin() || hasRole('procurement');
     }
 
     function isApprover() {
-      return isAuthenticated() && 
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'approver' || 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'executive' || 
-         isAdmin());
+      return isAdmin() || hasRole('approver') || hasRole('executive');
     }
 
     function isExecutive() {
-      return isAuthenticated() && 
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'executive' || isAdmin());
+      return isAdmin() || hasRole('executive');
     }
 
     function hasOnlyAllowedFields(fields) {
@@ -75,9 +81,11 @@ service cloud.firestore {
     // Domain Validators
     // ===============================================================
     function isValidUser(data) {
-      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'role', 'department']) &&
+      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'role', 'department', 'status', 'createdAt']) &&
              data.uid is string && data.email is string &&
-             data.role in ['admin', 'requester', 'approver', 'procurement', 'executive'];
+             data.role in ['admin', 'requester', 'approver', 'procurement', 'executive'] &&
+             (!('status' in data) || data.status is string) &&
+             (!('createdAt' in data) || data.createdAt is string);
     }
 
     function isValidWorkflow(data) {
