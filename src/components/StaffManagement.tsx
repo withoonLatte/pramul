@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db, createSecondaryUser } from '../firebase';
+import { db, createSecondaryUser, handleFirestoreError, OperationType } from '../firebase';
 import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { auth } from '../firebase';
 import { sendPasswordResetEmail } from 'firebase/auth';
@@ -88,11 +88,15 @@ export default function StaffManagement({ userProfile }: StaffManagementProps) {
 
       if (editingUser) {
         // Update Firestore only
-        await updateDoc(doc(db, 'users', editingUser.id), {
-          displayName,
-          role: formData.role,
-          department: formData.department
-        });
+        try {
+          await updateDoc(doc(db, 'users', editingUser.id), {
+            displayName,
+            role: formData.role,
+            department: formData.department
+          });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.UPDATE, `users/${editingUser.id}`);
+        }
       } else {
         // Create Auth + Firestore
         if (!formData.password || formData.password.length < 6) {
@@ -102,13 +106,17 @@ export default function StaffManagement({ userProfile }: StaffManagementProps) {
         const userCredential = await createSecondaryUser(email, formData.password);
         const newUser = userCredential.user;
 
-        await setDoc(doc(db, 'users', newUser.uid), {
-          uid: newUser.uid,
-          email: email,
-          displayName,
-          role: formData.role,
-          department: formData.department
-        });
+        try {
+          await setDoc(doc(db, 'users', newUser.uid), {
+            uid: newUser.uid,
+            email: email,
+            displayName,
+            role: formData.role,
+            department: formData.department
+          });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.CREATE, `users/${newUser.uid}`);
+        }
       }
 
       setIsModalOpen(false);
@@ -125,8 +133,7 @@ export default function StaffManagement({ userProfile }: StaffManagementProps) {
       try {
         await deleteDoc(doc(db, 'users', userId));
       } catch (err) {
-        console.error('Delete error:', err);
-        alert('ไม่สามารถลบได้');
+        handleFirestoreError(err, OperationType.DELETE, `users/${userId}`);
       }
     }
   };
