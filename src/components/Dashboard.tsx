@@ -15,13 +15,7 @@ import {
 } from 'recharts';
 import { TrendingUp, TrendingDown, DollarSign, FileText, Users, ShoppingCart, Search, Download, Calendar, Filter } from 'lucide-react';
 
-// Use global XLSX from CDN
-declare global {
-  interface Window {
-    XLSX: any;
-  }
-}
-const XLSX = (window as any).XLSX;
+import * as XLSX from 'xlsx';
 
 export default function Dashboard({ userProfile }: { userProfile: any }) {
   const [stats, setStats] = useState({

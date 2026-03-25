@@ -86,13 +86,23 @@ export default function StaffManagement({ userProfile }: StaffManagementProps) {
       const email = `${formData.username.toLowerCase().trim()}@procurement.pro`;
       const displayName = `${formData.firstName} ${formData.lastName}`.trim();
 
+      // Client-side check for existing user in Firestore
+      const existingUser = users.find(u => u.email?.toLowerCase() === email.toLowerCase());
+      if (existingUser && !editingUser) {
+        const statusMsg = existingUser.status === 'deleted' ? ' (ถูกระงับการใช้งานอยู่)' : '';
+        setError(`ชื่อผู้ใช้นี้มีอยู่ในระบบแล้ว${statusMsg} กรุณาค้นหา "${existingUser.displayName}" ในรายการและแก้ไขหรือกู้คืนบัญชีแทนการสร้างใหม่`);
+        setLoading(false);
+        return;
+      }
+
       if (editingUser) {
         // Update Firestore only
         try {
           await updateDoc(doc(db, 'users', editingUser.id), {
             displayName,
             role: formData.role,
-            department: formData.department
+            department: formData.department,
+            status: 'active' // Ensure it's active if edited
           });
         } catch (err) {
           handleFirestoreError(err, OperationType.UPDATE, `users/${editingUser.id}`);
@@ -103,19 +113,27 @@ export default function StaffManagement({ userProfile }: StaffManagementProps) {
           throw new Error('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
         }
 
-        const userCredential = await createSecondaryUser(email, formData.password);
-        const newUser = userCredential.user;
-
         try {
+          const userCredential = await createSecondaryUser(email, formData.password);
+          const newUser = userCredential.user;
+
           await setDoc(doc(db, 'users', newUser.uid), {
             uid: newUser.uid,
             email: email,
             displayName,
             role: formData.role,
-            department: formData.department
+            department: formData.department,
+            status: 'active',
+            createdAt: new Date().toISOString()
           });
-        } catch (err) {
-          handleFirestoreError(err, OperationType.CREATE, `users/${newUser.uid}`);
+        } catch (err: any) {
+          console.error('Create user error:', err);
+          const errorCode = err.code || (err.message?.includes('auth/email-already-in-use') ? 'auth/email-already-in-use' : '');
+          
+          if (errorCode === 'auth/email-already-in-use') {
+            throw new Error('ชื่อผู้ใช้นี้ถูกใช้งานแล้วในระบบ (Firebase Auth) แม้จะไม่พบในรายการพนักงานปัจจุบัน บัญชีนี้อาจเคยถูกลบไปแล้วแต่ยังค้างอยู่ในระบบ Auth กรุณาใช้ชื่อผู้ใช้อื่น หรือติดต่อฝ่ายเทคนิคเพื่อลบข้อมูลเก่าออก');
+          }
+          throw err;
         }
       }
 
@@ -128,13 +146,34 @@ export default function StaffManagement({ userProfile }: StaffManagementProps) {
     }
   };
 
-  const handleDelete = async (userId: string) => {
-    if (window.confirm('คุณแน่ใจหรือไม่ว่าต้องการลบพนักงานคนนี้? (ข้อมูลในระบบจะถูกลบ แต่บัญชี Auth จะยังอยู่แต่เข้าใช้งานไม่ได้หากลบ Profile)')) {
+  const handleDelete = async (user: any) => {
+    const isDeleted = user.status === 'deleted';
+    const message = isDeleted 
+      ? `คุณต้องการลบข้อมูลของ ${user.displayName} ออกจากฐานข้อมูลถาวรหรือไม่? (บัญชี Auth จะยังคงอยู่)`
+      : `คุณต้องการระงับการใช้งานของ ${user.displayName} หรือไม่? (พนักงานจะเข้าสู่ระบบไม่ได้)`;
+
+    if (window.confirm(message)) {
       try {
-        await deleteDoc(doc(db, 'users', userId));
+        if (isDeleted) {
+          await deleteDoc(doc(db, 'users', user.id));
+        } else {
+          await updateDoc(doc(db, 'users', user.id), {
+            status: 'deleted'
+          });
+        }
       } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `users/${userId}`);
+        handleFirestoreError(err, isDeleted ? OperationType.DELETE : OperationType.UPDATE, `users/${user.id}`);
       }
+    }
+  };
+
+  const handleRestore = async (userId: string) => {
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        status: 'active'
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `users/${userId}`);
     }
   };
 
@@ -228,19 +267,39 @@ export default function StaffManagement({ userProfile }: StaffManagementProps) {
                   <Key className="w-4 h-4" />
                 </button>
                 <button 
-                  onClick={() => handleDelete(user.id)}
-                  className="p-2 bg-slate-50 hover:bg-red-50 text-red-500 rounded-xl transition-colors"
+                  onClick={() => handleDelete(user)}
+                  className={`p-2 bg-slate-50 rounded-xl transition-colors ${user.status === 'deleted' ? 'hover:bg-red-100 text-red-600' : 'hover:bg-red-50 text-red-500'}`}
+                  title={user.status === 'deleted' ? 'ลบถาวร' : 'ระงับการใช้งาน'}
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
+                {user.status === 'deleted' && (
+                  <button 
+                    onClick={() => handleRestore(user.id)}
+                    className="p-2 bg-slate-50 hover:bg-green-50 text-green-600 rounded-xl transition-colors"
+                    title="กู้คืนบัญชี"
+                  >
+                    <Check className="w-4 h-4" />
+                  </button>
+                )}
               </div>
 
               <div className="flex items-center gap-4 mb-6">
-                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-lg ${roles.find(r => r.id === user.role)?.color || 'bg-slate-400'}`}>
+                <div className={`relative w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-lg ${roles.find(r => r.id === user.role)?.color || 'bg-slate-400'} ${user.status === 'deleted' ? 'grayscale opacity-50' : ''}`}>
                   <UserIcon className="w-8 h-8" />
+                  {user.status === 'deleted' && (
+                    <div className="absolute -bottom-1 -right-1 bg-red-500 rounded-full p-1 border-2 border-white">
+                      <X className="w-3 h-3 text-white" />
+                    </div>
+                  )}
                 </div>
                 <div>
-                  <h4 className="font-bold text-slate-800 text-lg">{user.displayName}</h4>
+                  <div className="flex items-center gap-2">
+                    <h4 className={`font-bold text-slate-800 text-lg ${user.status === 'deleted' ? 'line-through text-slate-400' : ''}`}>{user.displayName}</h4>
+                    {user.status === 'deleted' && (
+                      <span className="text-[8px] bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-tighter">ระงับการใช้งาน</span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
                     <Briefcase className="w-3 h-3" />
                     {user.department}
